@@ -137,7 +137,9 @@ class BlockStore:
     async def get_full_block(self, header_hash: bytes32) -> Optional[FullBlock]:
         cached = self.block_cache.get(header_hash)
         if cached is not None:
+            log.debug(f"cache hit for block {header_hash.hex()}")
             return cached
+        log.debug(f"cache miss for block {header_hash.hex()}")
         cursor = await self.db.execute("SELECT block from full_blocks WHERE header_hash=?", (header_hash.hex(),))
         row = await cursor.fetchone()
         await cursor.close()
@@ -150,7 +152,9 @@ class BlockStore:
     async def get_full_block_bytes(self, header_hash: bytes32) -> Optional[bytes]:
         cached = self.block_cache.get(header_hash)
         if cached is not None:
+            log.debug(f"cache hit for block {header_hash.hex()}")
             return cached
+        log.debug(f"cache miss for block {header_hash.hex()}")
         cursor = await self.db.execute("SELECT block from full_blocks WHERE header_hash=?", (header_hash.hex(),))
         row = await cursor.fetchone()
         await cursor.close()
@@ -178,14 +182,17 @@ class BlockStore:
             return []
 
         header_hashes_db = tuple([hh.hex() for hh in header_hashes])
-        formatted_str = f'SELECT block from block_records WHERE header_hash in ({"?," * (len(header_hashes_db) - 1)}?)'
+        formatted_str = (
+            f'SELECT header_hash, block from block_records WHERE header_hash in ({"?," * (len(header_hashes_db) - 1)}?)'
+        )
         cursor = await self.db.execute(formatted_str, header_hashes_db)
         rows = await cursor.fetchall()
         await cursor.close()
         all_blocks: Dict[bytes32, BlockRecord] = {}
         for row in rows:
-            block_rec: BlockRecord = BlockRecord.from_bytes(row[0])
-            all_blocks[block_rec.header_hash] = block_rec
+            header_hash = bytes.fromhex(row[0])
+            block_rec: BlockRecord = BlockRecord.from_bytes(row[1])
+            all_blocks[header_hash] = block_rec
         ret: List[BlockRecord] = []
         for hh in header_hashes:
             if hh not in all_blocks:
@@ -203,17 +210,18 @@ class BlockStore:
             return []
 
         header_hashes_db = tuple([hh.hex() for hh in header_hashes])
-        formatted_str = f'SELECT block from full_blocks WHERE header_hash in ({"?," * (len(header_hashes_db) - 1)}?)'
+        formatted_str = (
+            f'SELECT header_hash, block from full_blocks WHERE header_hash in ({"?," * (len(header_hashes_db) - 1)}?)'
+        )
         cursor = await self.db.execute(formatted_str, header_hashes_db)
         rows = await cursor.fetchall()
         await cursor.close()
         all_blocks: Dict[bytes32, FullBlock] = {}
         for row in rows:
-            full_block: FullBlock = FullBlock.from_bytes(row[0])
-            # only compute the header hash once
-            full_block_header_hash = full_block.header_hash
-            all_blocks[full_block_header_hash] = full_block
-            self.block_cache.put(full_block_header_hash, full_block)
+            header_hash = bytes.fromhex(row[0])
+            full_block: FullBlock = FullBlock.from_bytes(row[1])
+            all_blocks[header_hash] = full_block
+            self.block_cache.put(header_hash, full_block)
         ret: List[FullBlock] = []
         for hh in header_hashes:
             if hh not in all_blocks:
