@@ -287,6 +287,10 @@ full_node:
   # timeout for weight proof request
   weight_proof_timeout: 360
 
+  # List of trusted DNS seeders to bootstrap from.
+  # If you modify this, please change the hardcode as well from FullNode.set_server()
+  dns_servers:
+    - "seeder.fchirica.com"
   farmer_peer:
       host: *self_hostname
       port: 8447
