@@ -66,17 +66,12 @@ class BlockStore:
         self.ses_challenge_cache = LRUCache(50)
         return self
 
-    async def add_full_block(self, block: FullBlock, block_record: BlockRecord) -> None:
-        block_header_hash = block.header_hash
-        cached = self.block_cache.get(block_header_hash)
-        if cached is not None:
-            # Since write to db can fail, we remove from cache here to avoid potential inconsistency
-            # Adding to cache only from reading
-            self.block_cache.remove(block_header_hash)
+    async def add_full_block(self, header_hash: bytes32, block: FullBlock, block_record: BlockRecord) -> None:
+        self.block_cache.put(header_hash, block)
         cursor_1 = await self.db.execute(
             "INSERT OR REPLACE INTO full_blocks VALUES(?, ?, ?, ?, ?)",
             (
-                block_header_hash.hex(),
+                header_hash.hex(),
                 block.height,
                 int(block.is_transaction_block()),
                 int(block.is_fully_compactified()),
@@ -89,7 +84,7 @@ class BlockStore:
         cursor_2 = await self.db.execute(
             "INSERT OR REPLACE INTO block_records VALUES(?, ?, ?, ?,?, ?, ?)",
             (
-                block_header_hash.hex(),
+                header_hash.hex(),
                 block.prev_header_hash.hex(),
                 block.height,
                 bytes(block_record),
@@ -131,8 +126,8 @@ class BlockStore:
             return challenge_segments
         return None
 
-    def cache_block(self, block: FullBlock):
-        self.block_cache.put(block.header_hash, block)
+    def rollback_cache_block(self, header_hash: bytes32):
+        self.block_cache.remove(header_hash)
 
     async def get_full_block(self, header_hash: bytes32) -> Optional[FullBlock]:
         cached = self.block_cache.get(header_hash)

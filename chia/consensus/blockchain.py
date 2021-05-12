@@ -257,9 +257,10 @@ class Blockchain(BlockchainInterface):
             try:
                 # Perform the DB operations to update the state, and rollback if something goes wrong
                 await self.block_store.db_wrapper.begin_transaction()
-                await self.block_store.add_full_block(block, block_record)
+                header_hash: bytes32 = block.header_hash
+                await self.block_store.add_full_block(header_hash, block, block_record)
                 fork_height, peak_height, records = await self._reconsider_peak(
-                    block_record, genesis, fork_point_with_peak, npc_result
+                    header_hash, block_record, genesis, fork_point_with_peak, npc_result
                 )
                 await self.block_store.db_wrapper.commit_transaction()
 
@@ -273,8 +274,8 @@ class Blockchain(BlockchainInterface):
                         ] = fetched_block_record.sub_epoch_summary_included
                 if peak_height is not None:
                     self._peak_height = peak_height
-                self.block_store.cache_block(block)
             except BaseException:
+                self.block_store.rollback_cache_block(header_hash)
                 await self.block_store.db_wrapper.rollback_transaction()
                 raise
         if fork_height is not None:
@@ -284,6 +285,7 @@ class Blockchain(BlockchainInterface):
 
     async def _reconsider_peak(
         self,
+        header_hash: bytes32,
         block_record: BlockRecord,
         genesis: bool,
         fork_point_with_peak: Optional[uint32],
@@ -298,7 +300,7 @@ class Blockchain(BlockchainInterface):
         peak = self.get_peak()
         if genesis:
             if peak is None:
-                block: Optional[FullBlock] = await self.block_store.get_full_block(block_record.header_hash)
+                block: Optional[FullBlock] = await self.block_store.get_full_block(header_hash)
                 assert block is not None
 
                 if npc_result is not None:
@@ -306,7 +308,7 @@ class Blockchain(BlockchainInterface):
                 else:
                     tx_removals, tx_additions = [], []
                 await self.coin_store.new_block(block, tx_additions, tx_removals)
-                await self.block_store.set_peak(block.header_hash)
+                await self.block_store.set_peak(header_hash)
                 return uint32(0), uint32(0), [block_record]
             return None, None, []
 
@@ -334,7 +336,7 @@ class Blockchain(BlockchainInterface):
 
             # Collect all blocks from fork point to new peak
             blocks_to_add: List[Tuple[FullBlock, BlockRecord]] = []
-            curr = block_record.header_hash
+            curr = header_hash
 
             while fork_height < 0 or curr != self.height_to_hash(uint32(fork_height)):
                 fetched_full_block: Optional[FullBlock] = await self.block_store.get_full_block(curr)
