@@ -15,8 +15,8 @@ def initial_config_file(filename: Union[str, Path]) -> str:
     return pkg_resources.resource_string(__name__, f"initial-{filename}").decode()
 
 
-def create_default_chia_config(root_path: Path) -> None:
-    for filename in ["config.yaml"]:
+def create_default_chia_config(root_path: Path, filenames=["config.yaml"]) -> None:
+    for filename in filenames:
         default_config_file_data = initial_config_file(filename)
         path = config_path_for_filename(root_path, filename)
         mkdir(path.parent)
@@ -83,7 +83,7 @@ def load_config_cli(root_path: Path, filename: str, sub_config: Optional[str] = 
     return unflatten_properties(flattened_props)
 
 
-def flatten_properties(config: Dict):
+def flatten_properties(config: Dict) -> Dict:
     properties = {}
     for key, value in config.items():
         if type(value) is dict:
@@ -94,7 +94,7 @@ def flatten_properties(config: Dict):
     return properties
 
 
-def unflatten_properties(config: Dict):
+def unflatten_properties(config: Dict) -> Dict:
     properties: Dict = {}
     for key, value in config.items():
         if "." in key:
@@ -114,7 +114,7 @@ def add_property(d: Dict, partial_key: str, value: Any):
         d[key_1][key_2] = value
 
 
-def str2bool(v: Any) -> bool:
+def str2bool(v: Union[str, bool]) -> bool:
     # Source from https://stackoverflow.com/questions/15008758/parsing-boolean-values-with-argparse
     if isinstance(v, bool):
         return v
@@ -124,3 +124,29 @@ def str2bool(v: Any) -> bool:
         return False
     else:
         raise argparse.ArgumentTypeError("Boolean value expected.")
+
+
+def traverse_dict(d: Dict, key_path: str) -> Any:
+    """
+    Traverse nested dictionaries to find the element pointed-to by key_path.
+    Key path components are separated by a ':' e.g.
+      "root:child:a"
+    """
+    if type(d) is not dict:
+        raise TypeError(f"unable to traverse into non-dict value with key path: {key_path}")
+
+    # Extract one path component at a time
+    components = key_path.split(":", maxsplit=1)
+    if components is None or len(components) == 0:
+        raise KeyError(f"invalid config key path: {key_path}")
+
+    key = components[0]
+    remaining_key_path = components[1] if len(components) > 1 else None
+
+    val: Any = d.get(key, None)
+    if val is not None:
+        if remaining_key_path is not None:
+            return traverse_dict(val, remaining_key_path)
+        return val
+    else:
+        raise KeyError(f"value not found for key: {key}")
